@@ -1,0 +1,83 @@
+.data
+.align 2
+pmm_bitmap:
+   .word 0
+pmm_total_blocks:
+    .word 0
+    
+    
+.text
+pmm_set_block:
+   #a0=block function argument
+   
+   #code below shows load address of bitmap array
+   la t0,pmm_bitmap
+   lw t0,0(t0)
+   
+   srli t1,a0,5
+   
+   # block%32 for remainder,non remainder as array{i},remainder as bit in array's value
+   li t3,32
+   rem t2,a0,t3
+   
+   #bit shift
+   li t3,1
+   sll t3,t3,t2
+   
+   #move to t0[t4]
+   slli t1,t1,2
+   add t4,t0,t1
+   
+   #load,change the bit,save
+   lw t5, 0(t4)
+   or t5,t5,t3
+   sw t5,0(t4)
+   
+
+pmm_clear_block:
+   #a0=block function argument
+   
+   #code below shows load address of bitmap array
+   la t0,pmm_bitmap
+   lw t0,0(t0)
+   
+   srli t1,a0,5
+   
+   # block%32 for remainder,non remainder as array{i},remainder as bit in array's value
+   li t3,32
+   rem t2,a0,t3
+   
+   #bit shift
+   li t3,1
+   sll t3,t3,t2
+   not t3,t3
+   
+   #move to t0[t1],make it t4
+   slli t1,t1,2
+   add t4,t0,t1
+   
+   #load,change the bit,save
+   lw t5, 0(t4)
+   and t5,t5,t3
+   sw t5,0(t4)  
+   
+   
+pmm_test_block:
+   #a0 = block
+   la t0,pmm_bitmap  #address of variable in t0
+   lw t0, 0(t0)  #address of array,basically pointer situation
+   
+   srli t1,a0,5
+   
+   li t2,32
+   rem t3,a0,t2
+   li t4,1
+   sll t4,t4,t3
+   
+   
+   slli t1,t1,2
+   add t6,t0,t1
+   lw t5,0(t6)
+   
+   and a0,t5,t4
+   ret
