@@ -1,0 +1,325 @@
+.data
+.align 2
+pmm_bitmap:
+   .word 0
+pmm_total_blocks:
+    .word 0
+    
+    
+.text
+pmm_set_block:
+   #a0=block function argument
+   
+   #code below shows load address of bitmap array
+   la t0,pmm_bitmap
+   lw t0,0(t0)
+   
+   srli t1,a0,5
+   
+   # block%32 for remainder,non remainder as array{i},remainder as bit in array's value
+   li t3,32
+   rem t2,a0,t3
+   
+   #bit shift
+   li t3,1
+   sll t3,t3,t2
+   
+   #move to t0[t4]
+   slli t1,t1,2
+   add t4,t0,t1
+   
+   #load,change the bit,save
+   lw t5, 0(t4)
+   or t5,t5,t3
+   sw t5,0(t4)
+   
+
+pmm_clear_block:
+   #a0=block function argument
+   
+   #code below shows load address of bitmap array
+   la t0,pmm_bitmap
+   lw t0,0(t0)
+   
+   srli t1,a0,5
+   
+   # block%32 for remainder,non remainder as array{i},remainder as bit in array's value
+   li t3,32
+   rem t2,a0,t3
+   
+   #bit shift
+   li t3,1
+   sll t3,t3,t2
+   not t3,t3
+   
+   #move to t0[t1],make it t4
+   slli t1,t1,2
+   add t4,t0,t1
+   
+   #load,change the bit,save
+   lw t5, 0(t4)
+   and t5,t5,t3
+   sw t5,0(t4)  
+   
+   
+pmm_test_block:
+   #a0 = block
+   la t0,pmm_bitmap  #address of variable in t0
+   lw t0, 0(t0)  #address of array,basically pointer situation
+   
+   srli t1,a0,5
+   
+   li t2,32
+   rem t3,a0,t2
+   li t4,1
+   sll t4,t4,t3
+   
+   
+   slli t1,t1,2
+   add t6,t0,t1
+   lw t5,0(t6)
+   
+   and a0,t5,t4
+   ret
+   
+pmm_reserve_region:
+    addi sp, sp, -16
+    sw   ra, 12(sp)
+    sw   s0, 8(sp)
+    sw   s1, 4(sp)
+    sw   s2, 0(sp)
+
+    srli s0, a0, 12          # s0 = align_start = start / PAGE_SIZE
+
+    li   t1, 1
+    li   t2, 4096
+    sub  t1, t2, t1
+    add  t1, t1, a1
+    srli s2, t1, 12            # s2 = num_blocks
+
+    li   s1, 0                   # s1 = i = 0
+
+loop_start:
+    bge  s1, s2, loop_end
+
+    add  t3, s0, s1               # t3 = align_start + i
+
+    la   t4, pmm_total_blocks
+    lw   t4, 0(t4)
+
+    bge  t3, t4, skip_call         # if NOT (align_start+i < total_blocks), skip
+    mv   a0, t3
+    call pmm_set_block
+skip_call:
+
+    addi s1, s1, 1
+    j    loop_start
+
+loop_end:
+    lw   ra, 12(sp)
+    lw   s0, 8(sp)
+    lw   s1, 4(sp)
+    lw   s2, 0(sp)
+    addi sp, sp, 16
+    ret
+    
+
+
+
+pmm_free_region:
+    addi sp, sp, -16
+    sw   ra, 12(sp)
+    sw   s0, 8(sp)
+    sw   s1, 4(sp)
+    sw   s2, 0(sp)
+
+    srli s0, a0, 12          # s0 = align_start = start / PAGE_SIZE
+    srli s2, a1, 12            # s2 = num_blocks = size / PAGE_SIZE  (plain division, no round-up)
+
+    li   s1, 0                   # s1 = i = 0
+
+loop_start:
+    bge  s1, s2, loop_end
+
+    add  t3, s0, s1               # t3 = align_start + i
+
+    la   t4, pmm_total_blocks
+    lw   t4, 0(t4)
+
+    bge  t3, t4, skip_call         # if NOT (align_start+i < total_blocks), skip
+    mv   a0, t3
+    call pmm_clear_block
+skip_call:
+
+    addi s1, s1, 1
+    j    loop_start
+
+loop_end:
+    lw   ra, 12(sp)
+    lw   s0, 8(sp)
+    lw   s1, 4(sp)
+    lw   s2, 0(sp)
+    addi sp, sp, 16
+    ret
+    
+    
+pmm_init:
+    addi sp, sp, -48
+    sw   ra, 44(sp)
+    sw   s2, 40(sp)
+    sw   s3, 36(sp)
+    sw   s4, 32(sp)
+    sw   s5, 28(sp)
+    sw   s6, 24(sp)
+    sw   s7, 20(sp)
+    sw   s8, 16(sp)
+    sw   s9, 12(sp)
+
+    mv   s9, a0                        # s9 = mboot_info, saved for the whole function
+
+    la   t0, _kernel_end
+    li   t1, 134217728
+    lw   t2, 0(a0)
+    andi t2, t2, 1
+    beqz t2, skip_mem_calc
+    lw   t4, 4(a0)
+    lw   t5, 8(a0)
+    add  t4, t4, t5
+    slli t4, t4, 10
+    li   t5, 1048576
+    add  t1, t4, t5
+skip_mem_calc:
+    mv   s2, t1
+    srli t6, t1, 12
+    la   t2, pmm_total_blocks
+    sw   t6, 0(t2)
+
+    lw   t2, 0(a0)
+    andi t2, t2, 8
+    beqz t2, skip_mods
+    lw   t2, 20(a0)
+    beqz t2, skip_mods
+    lw   t3, 24(a0)
+    lw   t4, 20(a0)
+    li   t5, 0
+loop_mods:
+    bge  t5, t4, skip_mods
+    li   t6, 16
+    mul  t6, t5, t6
+    add  t6, t3, t6
+    lw   t6, 4(t6)
+    bge  t0, t6, skip_update
+    mv   t0, t6
+skip_update:
+    addi t5, t5, 1
+    j    loop_mods
+skip_mods:
+
+    addi t1, t0, 4095
+    li   t2, 4095
+    not  t2, t2
+    and  t0, t1, t2
+    mv   s7, t0                       # s7 = bitmap_start, saved
+    la   t1, pmm_bitmap
+    sw   t0, 0(t1)
+
+    la   t1, pmm_total_blocks
+    lw   t1, 0(t1)
+    srli t2, t1, 5
+    andi t3, t1, 31
+    beqz t3, skip_round
+    addi t2, t2, 1
+skip_round:
+    mv   s8, t2                       # s8 = num_words, saved
+
+    la   t4, pmm_bitmap
+    lw   t4, 0(t4)
+    li   t5, -1
+    li   t6, 0
+fill_loop:
+    bge  t6, s8, fill_done             # use s8, not t2 (t2 gets clobbered later)
+    slli t3, t6, 2
+    add  t3, t4, t3
+    sw   t5, 0(t3)
+    addi t6, t6, 1
+    j    fill_loop
+fill_done:
+
+    li   t0, 1
+    slli t0, t0, 6
+    lw   t1, 0(s9)                     # use s9, not a0 (a0 no longer holds mboot_info here)
+    and  t0, t0, t1
+    beqz t0, do_fallback
+    lw   s3, 44(s9)
+    lw   s4, 48(s9)
+    add  s5, s3, s4
+    mv   s6, s4
+mmap_loop:
+    bge  s6, s5, skip_mmap
+    lw   t5, 20(s6)
+    li   t6, 1
+    bne  t5, t6, next_entry
+    lw   a0, 4(s6)
+    lw   a1, 12(s6)
+    call pmm_free_region
+next_entry:
+    lw   t5, 0(s6)
+    addi t5, t5, 4
+    add  s6, s6, t5
+    j    mmap_loop
+do_fallback:
+    li   a0, 0x100000
+    sub  a1, s2, a0
+    call pmm_free_region
+skip_mmap:
+
+    # --- reserve calls start here ---
+    li   a0, 0
+    li   a1, 0x100000
+    call pmm_reserve_region
+
+    li   a0, 0x100000
+    la   t0, _kernel_end
+    li   t1, 0x100000
+    sub  a1, t0, t1
+    call pmm_reserve_region
+
+    lw   t0, 0(s9)
+    andi t0, t0, 8
+    beqz t0, skip_reserve_mods
+    lw   t0, 20(s9)
+    beqz t0, skip_reserve_mods
+    lw   s3, 24(s9)
+    lw   s4, 20(s9)
+    li   s5, 0
+reserve_mods_loop:
+    bge  s5, s4, skip_reserve_mods
+    li   t0, 16
+    mul  t0, s5, t0
+    add  t0, s3, t0
+    lw   t1, 0(t0)
+    lw   t2, 4(t0)
+    mv   a0, t1
+    sub  a1, t2, t1
+    call pmm_reserve_region
+    addi s5, s5, 1
+    j    reserve_mods_loop
+skip_reserve_mods:
+
+    mv   a0, s7
+    slli a1, s8, 2
+    call pmm_reserve_region
+    # --- reserve calls end here ---
+
+    lw   ra, 44(sp)
+    lw   s2, 40(sp)
+    lw   s3, 36(sp)
+    lw   s4, 32(sp)
+    lw   s5, 28(sp)
+    lw   s6, 24(sp)
+    lw   s7, 20(sp)
+    lw   s8, 16(sp)
+    lw   s9, 12(sp)
+    addi sp, sp, 48
+    ret
+    
