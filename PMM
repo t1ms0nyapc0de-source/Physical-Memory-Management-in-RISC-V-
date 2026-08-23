@@ -32,7 +32,7 @@ pmm_set_block:
    lw t5, 0(t4)
    or t5,t5,t3
    sw t5,0(t4)
-   
+   ret
 
 pmm_clear_block:
    #a0=block function argument
@@ -60,7 +60,7 @@ pmm_clear_block:
    lw t5, 0(t4)
    and t5,t5,t3
    sw t5,0(t4)  
-   
+   ret
    
 pmm_test_block:
    #a0 = block
@@ -323,3 +323,90 @@ skip_reserve_mods:
     addi sp, sp, 48
     ret
     
+pmm_alloc_block:
+    addi sp, sp, -16
+    sw   ra, 12(sp)
+    sw   s0, 8(sp)
+    sw   s1, 4(sp)
+    sw   s2, 0(sp)
+
+    la   t0, pmm_total_blocks
+    lw   t0, 0(t0)
+    srli s0, t0, 5              # s0 = num_words
+
+    la   t0, pmm_bitmap
+    lw   s1, 0(t0)                 # s1 = pmm_bitmap (array base)
+
+    li   s2, 0                       # s2 = i = 0
+
+outer_loop:
+    bge  s2, s0, alloc_panic
+
+    slli t0, s2, 2
+    add  t0, s1, t0
+    lw   t1, 0(t0)
+
+    li   t2, -1
+    beq  t1, t2, next_word
+
+    li   t4, 32
+    li   t3, 0                          # t3 = bit
+inner_loop:
+    bge  t3, t4, next_word
+
+    li   t5, 1
+    sll  t5, t5, t3
+
+    and  t6, t1, t5
+    bnez t6, inner_next
+
+    slli t0, s2, 5
+    add  t0, t0, t3                       # t0 = block
+
+    mv   s0, t0                             # save block into s0 — SAFE, we're done needing num_words by now
+
+    mv   a0, t0
+    call pmm_set_block
+
+    slli a0, s0, 12                            # a0 = block * PAGE_SIZE (use s0, survived the call)
+    j    alloc_done
+
+inner_next:
+    addi t3, t3, 1
+    j    inner_loop
+
+next_word:
+    addi s2, s2, 1
+    j    outer_loop
+
+alloc_panic:
+    # printf(...) omitted — would need a call to your terminal/print routine here
+    # while(1) { cli; hlt; }
+panic_loop:
+    wfi                    # or your platform's halt instruction
+    j    panic_loop
+
+alloc_done:
+    lw   ra, 12(sp)
+    lw   s0, 8(sp)
+    lw   s1, 4(sp)
+    lw   s2, 0(sp)
+    addi sp, sp, 16
+    ret
+    
+pmm_free_block:
+    addi sp, sp, -16
+    sw   ra, 12(sp)
+    #a0=addr
+    srli t0,a0,12
+    
+    la t1,pmm_total_blocks
+    lw t1,0(t1)
+    bge t0,t1,skip_free
+    mv a0,t0
+    call pmm_clear_block
+    
+skip_free:
+    lw ra,12(sp)
+    addi sp,sp,16
+    ret
