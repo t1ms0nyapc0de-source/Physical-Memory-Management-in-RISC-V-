@@ -1,0 +1,85 @@
+Errors based on Codex
+
+1)
+## Must-fix errors
+
+   Severity    Problem                                               Impact
+  ━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Critical    Duplicate global labels: loop_start, skip_call,            Most assemblers reject this; use unique labels or
+               and loop_end occur twice (/C:/Users/Timson Yap/            assembler-local labels such as .Lreserve_loop.
+               Downloads/PMM:102, /C:/Users/Timson Yap/Downloads/
+               PMM:141).
+  ────────  ──────────────────────────────────────  ────────────────────────────────────────────────────
+   Critical    pmm_alloc_block calculates bitmap words with floor    With 33 blocks, it searches only blocks 0–31 and
+               division (/C:/Users/Timson Yap/Downloads/PMM:335).    never allocates block 32. Use (total_blocks + 31)
+                                                                     >> 5.
+  ────────  ──────────────────────────────────────  ────────────────────────────────────────────────────
+   Critical    pmm_reserve_region rounds only size, not start +      An unaligned region can leave its final
+               size (/C:/Users/Timson Yap/Downloads/PMM:92).         overlapping page allocatable. For start=0x1001,
+                                                                     size=0x1000, pages 1 and 2 must both be reserved;
+                                                                     current code reserves only page 1.
+  ────────  ──────────────────────────────────────  ────────────────────────────────────────────────────
+   High        pmm_free_region frees from a rounded-down start (/    A partially reserved page can be incorrectly
+               C:/Users/Timson Yap/Downloads/PMM:136).               marked free. Free only fully contained frames:
+                                                                     first=(start+4095)>>12, end=(start+size)>>12.
+  ────────  ──────────────────────────────────────  ────────────────────────────────────────────────────
+   High        The allocator never returns failure; it enters an     Exhaustion can hang the OS and is difficult to
+               infinite wfi loop (/C:/Users/Timson Yap/Downloads/    test. Return a0=0 (or an error code) and let the
+               PMM:382).                                             caller decide whether to panic.
+  ────────  ──────────────────────────────────────  ────────────────────────────────────────────────────
+   High        Direct bitmap helpers have no range checks (/C:/      A bad block number can write past the bitmap and
+               Users/Timson Yap/Downloads/PMM:10, /C:/Users/         corrupt memory. Make them private helpers or
+               Timson Yap/Downloads/PMM:37).                         validate block < pmm_total_blocks.
+  ────────  ──────────────────────────────────────  ────────────────────────────────────────────────────
+   High        Multiboot memory-map addresses/lengths are 64-bit,    A region above 4 GiB is silently truncated and may
+               but only low 32-bit halves are read (/C:/Users/       corrupt low memory. Explicitly reject non-zero
+               Timson Yap/Downloads/PMM:259).                        high halves on RV32, or support 64-bit addresses.
+  ────────  ──────────────────────────────────────  ────────────────────────────────────────────────────
+   Medium      The total-memory limit comes from mem_upper,          A valid memory map can contain usable RAM beyond
+               otherwise a fixed 128 MiB (/C:/Users/Timson Yap/      that limit, which will never be available. Derive
+               Downloads/PMM:181).                                   the maximum usable physical end from the memory
+                                                                     map when present.
+  ────────  ──────────────────────────────────────  ────────────────────────────────────────────────────
+   Medium      rem and mul require the RISC-V M extension (/C:/      It will fail on an RV32I-only target. block & 31
+               Users/Timson Yap/Downloads/PMM:21).                   can replace rem block,32; avoid mul for fixed
+                                                                     struct sizes with a shift.
+  ────────  ──────────────────────────────────────  ────────────────────────────────────────────────────
+   Medium      Allocation is not atomic.                             Interrupts or multiple harts can allocate the same
+                                                                     page between the test and set. Use a lock or
+                                                                     atomic bitmap operation before enabling
+                                                                     concurrency.
+Solutions:
+  - Removed duplicate labels; static check now finds zero duplicates.
+  - Fixed reserve/free range rounding, zero-size handling, bounds limits, and 32-bit overflow cases by changing the logic.
+
+    void pmm_reserve_region(uint32_t start, uint32_t size) {
+      if (size == 0) {
+          return;
+      }
+
+      uint32_t align_start = start / PAGE_SIZE;
+
+      uint64_t end = (uint64_t)start + size;
+      uint32_t end_block = (uint32_t)((end + PAGE_SIZE - 1) / PAGE_SIZE);
+
+      uint32_t num_blocks = end_block - align_start;
+
+      for (uint32_t i = 0; i < num_blocks; i++) {
+          if (align_start + i < pmm_total_blocks) {
+              pmm_set_block(align_start + i);
+          }
+      }
+    }
+
+  - Fixed allocator word count to use ceiling division; 33-block systems now work.
+  - Changed out-of-memory behavior to return a0 = 0 instead of hanging.
+  - Added bounds checks and boolean returns for bitmap testing.
+  - Replaced rem/mul with shifts and masks; no M-extension instructions remain.
+  - Switched index/address comparisons to unsigned branches.
+  - Validated Multiboot memory-map entry sizes and safely ignores entries above 4 GiB on RV32.
+  - Corrected mem_upper calculation and use the memory map’s highest usable address when available.
+  - Added an allocation bitmap. pmm_free_block now rejects unaligned, out-of-range, double-free, and never-allocated
+    pages, protecting kernel/module/bitmap reservations.
+
+  - Reserves space for both bitmap arrays.
+

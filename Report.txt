@@ -1,0 +1,32 @@
+Session Summary
+
+I asked Claude to teach me RISC-V assembly from scratch, then guided me through translating an existing C Physical Memory Manager (PMM) — originally written for an x86 kernel — into hand-written RISC-V assembly, function by function.
+
+What I Contributed:
+
+Wrote the first draft of nearly every function myself before Claude reviewed it.
+
+What Claude Contributed:
+
+Explained RISC-V concepts (registers, calling convention, stack mechanics, addressing modes) before and alongside the code.
+Reviewed each of my drafts, identifying specific line-level bugs with explanations rather than silent corrections.
+Maintained register-lifetime consistency across a long, multi-function file, flagging cross-call clobbering issues as they arose.
+Performed whole-file review passes when asked, catching bugs that only became visible when tracing a value's lifetime across the entire function rather than one instruction at a time.
+Provided testing strategies (QEMU-based) appropriate for bare-metal RISC-V code with no real hardware or OS underneath it.
+
+
+
+
+After that, I pass it to codex(model:gpt-5.6-terra high) for red teaming.
+
+Here is my prompt to Codex:
+"I want you to check my PMM files.It is a text file written in riscv assembly.It is about Physical Memory Management
+  in Operating System.
+
+  The output im expecting:
+  1)give me a test method to test whether it is working with as least disk space as possible
+  2)check the codes errors and sustainability like a senior programmer
+  3)give me test cases"
+
+It shows me my code's bugs and vulnerability, and i fix them.I did also follows it's test method and cases.
+
