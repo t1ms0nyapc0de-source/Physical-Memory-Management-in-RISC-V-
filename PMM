@@ -582,7 +582,9 @@ pmm_free_block:
     sw   ra, 12(sp)
     sw   s0, 8(sp)
     # a0 = page-aligned physical address returned by pmm_alloc_block.
-    andi t0,a0,4095
+    # 4095 does not fit in the signed 12-bit immediate accepted by andi.
+    li   t0, 4095
+    and  t0, a0, t0
     bnez t0,skip_free
     srli s0,a0,12
     

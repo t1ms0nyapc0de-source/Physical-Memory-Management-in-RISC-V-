@@ -1,0 +1,113 @@
+PMM MULTIBOOT SELF-TEST UPDATE NOTE
+===================================
+
+Purpose of this update
+----------------------
+This update adds a bare-metal RISC-V RV32I integration test for the physical
+memory manager (PMM).  The test constructs a Multiboot v1-compatible
+information structure and memory-map entry in assembly, calls pmm_init with
+that structure, and checks that the PMM correctly initializes and allocates
+physical frames.
+
+Important terminology
+---------------------
+The existing project implements a PMM, not a complete virtual memory manager
+(VMM).  It manages physical 4 KiB frames using bitmaps.  A complete VMM would
+also require page-table construction, writing satp, executing sfence.vma, and
+testing virtual-address translation.  Those features are not added here.
+
+Changed existing file
+---------------------
+PMM
+
+One RV32I assembler error was fixed in pmm_free_block.
+
+Previous instruction:
+    andi t0, a0, 4095
+
+Problem:
+    andi accepts a signed 12-bit immediate only (-2048 to 2047), so 4095 is
+    not valid for an RV32I assembler.
+
+Replacement:
+    li   t0, 4095
+    and  t0, a0, t0
+
+This retains the original purpose: test whether a physical address is aligned
+to the 4 KiB page size.
+
+Added files
+-----------
+1. pmm_selftest.S
+   The assembly test program.
+
+   It creates pmm_test_mboot_info, a Multiboot v1 information structure, and
+   pmm_test_mmap, one Multiboot memory-map entry.  The entry describes this
+   usable physical-RAM interval for QEMU virt:
+
+       base = 0x80000000
+       length = 0x00800000  (8 MiB)
+       type = 1             (usable RAM)
+
+   It calls:
+
+       pmm_init(&pmm_test_mboot_info)
+
+   It then checks all of the following:
+
+   - pmm_init derives pmm_total_blocks as 0x80800.
+   - pmm_bitmap is initialized to a nonzero address.
+   - the first allocated frame is nonzero.
+   - the second allocated frame is nonzero.
+   - the two allocated frames are different.
+   - pmm_allocated_bitmap marks an allocated frame as owned.
+   - freeing a valid frame makes it available for first-fit reuse.
+   - attempting to free the bitmap-reserved page does not release it.
+   - an index equal to pmm_total_blocks is rejected as out of range.
+
+   On success, it writes the result through QEMU virt's NS16550A UART at
+   address 0x10000000.
+
+2. pmm_test_layout.inc
+   Defines assembly constants for:
+
+   - struct pmm_test_state fields: expected, actual, checks_passed, and
+     checks_failed.
+   - relevant Multiboot v1 information-structure offsets.
+   - Multiboot v1 memory-map entry offsets and size.
+
+3. pmm_selftest.ld
+   Linker script for QEMU virt.  It links the image at 0x80000000 and defines
+   _kernel_end after the .bss section, aligned to a 4 KiB page.  This lets
+   pmm_init safely place the PMM bitmaps after the test image.
+
+4. Makefile
+   Provides these commands:
+
+       make selftest CROSS=riscv64-unknown-elf-
+       make run
+
+   The first builds pmm_selftest.elf with RV32I settings.  The second starts
+   the image on qemu-system-riscv32 using the QEMU virt machine.
+
+5. PMM_SELFTEST.md
+   User-facing build instructions and a brief explanation of the test.
+
+Expected successful serial output
+---------------------------------
+PMM Multiboot self-test: PASS (9/9 checks)
+
+Verification status
+-------------------
+The source was statically checked for the Multiboot flags, map entry size,
+usable-RAM range, pmm_init invocation, linker-provided _kernel_end, duplicate
+labels, invalid large andi immediates, and the expected output string.
+
+
+Expected QEMU output:
+
+    PMM Multiboot self-test: PASS (9/9 checks)
+
+If the test does not print PASS, QEMU remains halted.  Inspect pmm_test_state
+in GDB; checks_failed is nonzero and expected/actual store the latest equality
+comparison values.
