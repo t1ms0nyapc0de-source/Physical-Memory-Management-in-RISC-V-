@@ -36,7 +36,7 @@ pmm_test_stack:
     .space 4096
 pmm_test_stack_top:
 
-.section .text
+.section .text.boot
 .globl _start
 _start:
     la   sp, pmm_test_stack_top

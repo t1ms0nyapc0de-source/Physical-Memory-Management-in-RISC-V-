@@ -167,7 +167,8 @@ pmm_reserve_region:
 
     add  t1, a0, a1                # low 32 bits of end (exclusive)
     bltu t1, a0, pmm_reserve_cap    # end is >= 4 GiB; cap at managed memory
-    addi t2, t1, 4095
+    li   t2, 4095
+    add  t2, t1, t2
     bltu t2, t1, pmm_reserve_cap    # rounding would cross 4 GiB
     srli s1, t2, 12                # end block = ceil(end / PAGE_SIZE)
     bltu t0, s1, pmm_reserve_cap
@@ -204,7 +205,8 @@ pmm_free_region:
     la   t0, pmm_total_blocks
     lw   t0, 0(t0)
 
-    addi t1, a0, 4095
+    li   t1, 4095
+    add  t1, a0, t1
     bltu t1, a0, pmm_free_region_done  # first full page begins above 4 GiB
     srli s0, t1, 12                   # first block = ceil(start / PAGE_SIZE)
     bgeu s0, t0, pmm_free_region_done
@@ -333,7 +335,8 @@ skip_update:
     j    loop_mods
 skip_mods:
 
-    addi t1, s0, 4095
+    li   t1, 4095
+    add  t1, s0, t1
     li   t2, 4095
     not  t2, t2
     and  t0, t1, t2

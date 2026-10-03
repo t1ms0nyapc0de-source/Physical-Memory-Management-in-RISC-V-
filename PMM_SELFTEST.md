@@ -37,6 +37,10 @@ make selftest CROSS=riscv64-unknown-elf-
 make run
 ```
 
+For a non-interactive pass/fail run that exits automatically, use `make check`.
+It runs QEMU for up to five seconds, requires the exact PASS line, and returns
+a failing status if the guest does not print it.
+
 For a toolchain named `riscv32-unknown-elf-gcc`, use
 `CROSS=riscv32-unknown-elf-` instead.  Exit QEMU with `Ctrl-A`, then `X`.
 
